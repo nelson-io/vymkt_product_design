@@ -50,6 +50,41 @@ dummified <- dummy_cols(code %>% mutate_all(as.factor), remove_first_dummy = T, 
 
 scores_dfs <-  map(1:nrow(survey_data), ~dummified %>% cbind(value = survey_data %>% slice(.x) %>% t() %>% as.vector()))
 
+scores_total <- map_df(scores_dfs, ~.x)
+
+model <- lm(value~.,scores_total)
+
+model_summary <- summary(model)
+
+
+model_summary$coefficients
+
+# relative importance
+
+range_calculation <- function(coef_numbers){
+  range <- abs(max(0,model$coefficients[coef_numbers]) - min(0,model$coefficients[coef_numbers]))
+  return(range)
+}
+
+relative_importance_df <- data.frame()
+attributes <- c('Price', 'size', 'backlight', 'water_resistant','internal_memory')
+coeff_positions <- list(2:4,5:6,7,8,9:11)
+
+for(i in 1:length(scores_dfs)){
+  
+  model <- lm(value~., scores_dfs[[i]])
+  ranges <- map_dfc(coeff_positions, ~ range_calculation(.x)) %>% set_names(str_c(attributes,'_range'))
+  ranges_sum <- sum(ranges)
+  relative_importance <- map_dfc(ranges, ~.x/ranges_sum) %>% 
+    mutate(id = i) %>% 
+    select(id, everything())
+  
+  relative_importance_df <- rbind(relative_importance_df, relative_importance)
+  
+}
+
+
+
 
 
 
