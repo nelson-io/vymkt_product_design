@@ -1,0 +1,386 @@
+---
+title: "Diseño de Producto"
+author: "Nelson Shilman"
+date: "9/27/2020"
+output: 
+  pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Diseño del estudio
+
+**1. Elija una categoría de producto/servicio que le interese.** 
+
+ Para este estudio he elegido trabajar con el mercado de e-readers.
+ 
+
+**2. Identifique los atributos que usted cree que son considerados importantes por los potenciales consumidores de este producto. Se debe limitar la elección a un conjunto de 3 o 4 atributos, además del precio (4 o 5 atributos en total).**
+
+Los 5 atributos escogidos son:
+
+  * Tamaño de la pantalla
+  * Retroiluminación
+  * Resistencia al agua
+  * Capacidad de memoria interna
+  * Precio
+
+
+**3.	Identifique los “niveles” para cada uno de sus atributos. Para este ejercicio, el precio debe tener tres niveles. Todos los demás atributos pueden tener 2, 3 ó 4 niveles.** 
+
+Los niveles de los 5 atributos escogidos son:
+
+  * Tamaño de la pantalla
+    + 6,8 o 10 pulgadas
+  * Retroiluminación
+    + Con retroiluminación o sin retroiluminación
+  * Resistencia al agua
+    + Con resistencia al agua o sin resistencia al agua
+  * Capacidad de memoria interna
+    + 4, 8, 16 o 32 GB
+  * Precio
+    + 80, 120, 160 o 200 USD
+    
+    
+**4.	Diseñe un cuestionario compuesto de una serie de perfiles a evaluar con una escala de 1 a 9. Utilice uno de los ejemplos de diseños experimentales ortogonales para crear sus perfiles (al final del enunciado). Si desea generar otro diseño que no esté en las tablas, puede adaptar el ejemplo del código en R entregado en conjunto con este enunciado (code_generateDesign.R).** 
+
+Para generar el diseño experimental ortogonal,primero se generó una tabla con todas las combinaciones posibles de atributos
+
+```{r, include=FALSE}
+library(conjoint)
+library(tidyverse)
+library(rio)
+library(fastDummies)
+library(ggthemes)
+library(gridExtra)
+library(factoextra)
+library(NbClust)
+library(knitr)
+library(kableExtra)
+```
+
+```{r}
+c <- expand.grid(
+  price <- c("80", "120", "160", "200"),
+  size <- c("6 pulgadas", "8 pulgadas", "10 pulgadas"),
+  backlight <- c("sí", "no"),
+  water_resistant <- c("sí", "no"),
+  internal_mem <- c('4GB','8GB','16GB','32GB'))
+```
+
+Luego se cambió el nombre de los atributos de la tabla y se procedió a realizar el diseño ortogonal y su codificación
+
+```{r}
+names(c) <- c("price", "size", "backlight", "water_resistant", "internal_memory")
+
+
+set.seed(0)
+design <- caFactorialDesign(data=c, type="fractional")
+kbl(design, booktabs = T,
+    caption = "Configuraciones seleccionadas por el diseño factorial") %>%
+kable_styling(latex_options = "striped")
+
+
+
+
+```
+Y se procedió a codificarse
+
+```{r}
+code <- caEncodedDesign(design)
+encodedorthodesign <- data.frame(design, code)
+kbl(code, booktabs = T, 
+    caption = "Codificación de las configuraciones seleccionadas por el diseño factorial") %>%
+kable_styling(latex_options = "striped")
+```
+
+Por último, se generó un loop para representar en una línea de texto cada configuración escogida del producto para simplificar su inclusión en la encuesta.
+
+```{r}
+for(i in 1:nrow(design)){
+  print(paste('Precio (USD):', design$price[i],'-', 
+              'Tamaño:', design$size[i],',',
+              'Backlight:', design$backlight[i],',',
+              'Sumergible:', design$water_resistant[i],',',
+              'Mem. interna:', design$internal_memory[i]))
+}
+```
+
+# Recolección de datos
+
+Se ha optado por usar los formularios de Google para realizar la encuesta habiendo obtenido 39 respuestas al momento de realizar este estudio. Para una mejor ilustración, una copia de la encuesta es accesible a través del siguiente [link](https://forms.gle/eEAoDXX7CEgKTgni7)
+
+Adicionalmente, los datos con las respuestas obtenidas pueden descargarse a través del siguiente [link](https://docs.google.com/spreadsheets/d/1xcZ50RHmDu-X2GYyOh7OUkJLhqBkNmJ9chydSBOcag4/export?gid=1222909420&format=csv)
+
+
+# Análisis de datos
+
+**1.	Realice una regresión utilizando R o Excel para estimar los valores parciales de cada uno de sus encuestados.**
+
+Primero importamos los datos
+
+```{r, message=FALSE}
+path <- 
+  'https://docs.google.com/spreadsheets/d/1xcZ50RHmDu-X2GYyOh7OUkJLhqBkNmJ9chydSBOcag4/export?gid=1222909420&format=csv'
+
+survey_data <- read_csv(path) %>% 
+  select(-Timestamp)
+```
+
+Generamos las variables dummies para cada atributo, excluyendo el primer nivel de cada uno de estos ya que pasarán a verse representados como los niveles base en la regresión.
+
+```{r}
+dummified <- dummy_cols(code %>% mutate_all(as.factor),
+                        remove_first_dummy = T, 
+                        remove_selected_columns = T)
+```
+
+Procedemos a transformar los datos generando una lista de dataframes en la que cada dataframe corresponde a un encuestado, y estos poseen una fila por cada configuración de producto, donde las columnas corresponden a los atributos y la valoración otorgada a esa configuración
+
+```{r}
+scores_dfs <-  map(1:nrow(survey_data), ~dummified %>% 
+                     cbind(value = survey_data %>% slice(.x) %>% 
+                             t() %>% 
+                             as.vector()))
+```
+
+A fines ilustrativos se muestra el primero de estos 39 dataframes
+
+```{r}
+kbl(scores_dfs[[1]], booktabs = T, 
+    caption = "Codificación Dummy de cada configuración y valores otorgados por el primer encuestado") %>%
+  kable_styling(latex_options = c("striped", "scale_down"))
+```
+
+
+
+Adicionalmente, unimos los 39 dataframe resultantes a través de sus filas y obtenemos un dataframe general de la encuesta.
+
+```{r}
+scores_total <- map_df(scores_dfs, ~.x)
+```
+
+Para realizar las regresiones particulares de cada usuario, desarrollamos una función que aplica el modelo estadístico requerido y obtiene los coeficientes que luego los coherce a una estructura tabular.
+
+```{r}
+get_coeffs <- function(df){
+  model <- lm(value~.,df)
+  coeffs <- model$coefficients %>% 
+           t() %>% 
+            as.data.frame() 
+  
+  return(coeffs)
+}
+```
+
+Luego, aplicamos la función a cada uno de los data frames particulares, uniendo los resultados por las filas, consiguiendo de esta forma una tabla con todos los valores parciales para cada uno de los encuestados y mostramos esa tabla.
+
+```{r}
+partial_values <- map_dfr(scores_dfs, get_coeffs)
+kbl(partial_values, booktabs = T, caption = "Valores parciales de cada encuesado") %>%
+  kable_styling(latex_options = c("striped", "scale_down"))
+```
+
+**2.	Para cada encuestado, determine la importancia relativa de cada atributo.**
+
+Primero armamos una función que obtiene el rango de los coeficientes y cero para los niveles de cada uno de los atributos al aplicar un modelo de regresión múltiple.
+
+```{r}
+range_calculation <- function(coef_numbers){
+  range <- abs(max(0,model$coefficients[coef_numbers]) - min(0,model$coefficients[coef_numbers]))
+  return(range)
+}
+```
+
+Ahora inicializamos un dataframe vacío y definimos un vector de atributos y una lista con las posiciones de los coeficientes que corresponden a cada atributo
+
+```{r}
+relative_importance_df <- data.frame()
+attributes <- c('price', 'size', 'backlight', 'water_resistant','internal_memory')
+coeff_positions <- list(2:4,5:6,7,8,9:11)
+```
+
+Luego iteramos a través de cada dataframe particular, aplicando el modelo estadístico seleccionado, extrayendo los coeficientes, calculando el rango de estos y estimando la importancia relativa para luego popular al dataframe inicializado anteriormente y terminamos mostrando el objeto resultante con la importancia relativa de cada atributo para cada agente
+
+```{r, message=FALSE}
+for(i in 1:length(scores_dfs)){
+  
+  model <- lm(value~., scores_dfs[[i]])
+  ranges <- map_dfc(coeff_positions, ~ range_calculation(.x)) %>% set_names(str_c(attributes,'_range'))
+  ranges_sum <- sum(ranges)
+  relative_importance <- map_dfc(ranges, ~.x/ranges_sum) %>% 
+    mutate(id = i) %>% 
+    select(id, everything())
+  
+  relative_importance_df <- rbind(relative_importance_df, relative_importance)
+  
+}
+
+kbl(relative_importance_df, booktabs = T,
+    caption = "Importancia Relativa de cada atributo para cada agente") %>%
+kable_styling(latex_options = "striped")
+```
+
+\newpage
+
+**3.	Grafique los valores parciales asociados al precio de cada encuestado. ¿Cuáles son las implicancias de estos gráficos en las decisiones de gestión?**
+
+Para este problema, inicializamos una lista y generamos un for loop similar al del punto anterior pero conservando únicamente los coeficientes asociados al precio del producto. Graficamos y guardamos cada visualización de los valores parciales en la lista y luego mostramos todas las visuales.
+
+
+
+```{r,fig.height=15, fig.width= 10}
+plist <- list()
+for(i in 1:length(scores_dfs)){
+  
+  model <- lm(value~., scores_dfs[[i]])
+  plot_df <- data.frame(utils = c(0,model$coefficients[2:4]) %>% as.vector(), 
+                        label = c('$80', '$120', '$160', '$200'))
+  
+  plist[[i]] <- ggplot(plot_df)+
+    geom_line(aes(x = factor(label, levels = c('$80', '$120', '$160', '$200')), 
+                  y = utils, group = 1),
+              color = 'steelblue', size = 1.5)+
+    theme_bw()+
+    xlab(NULL)
+    
+  
+}
+do.call("grid.arrange", c(plist, ncol=4))
+```
+
+Siendo el nivel base el de menor precio, se observa que en general el aumento de precio se encuentra asociado a una perdida de utilidad y esto puede tener implicancias al nivel de gestión en el sentido de que al aumentar el precio se deben ofrecer distintos niveles de otros atributos para mantener o aumentar la utilidad por parte de los consumidores.
+
+
+**4.	¿Cuánto están dispuestos a pagar los consumidores por cambios en el atributo más importante? (HINT: si precio es el atributo más importante, considere el segundo atributo más importante)**
+
+Primero evaluamos la importancia relativa de los atributos aplicando un modelo de regresión múltiple a los datos consolidados del total de los encuestados para identificar el atributo más importante.
+
+Tal como se aprecia en la tabla 6, este resulto ser el precio seguido por la memoria interna
+
+```{r, message=FALSE,}
+model <- lm(value~., scores_total)
+ranges <- map_dfc(coeff_positions, ~ range_calculation(.x)) %>% set_names(str_c(attributes,'_range'))
+ranges_sum <- sum(ranges)
+relative_importance <- map_dfc(ranges, ~.x/ranges_sum) %>% 
+  gather(key = 'Atributo',value = 'Importancia Relativa')
+
+kbl(relative_importance, booktabs = T,
+    caption = "Importancia relativa de cada atributo") %>%
+kable_styling(latex_options = "striped")
+
+
+```
+
+Tomando lo coeficientes resultantes del modelo general, encontramos que:
+
+Para pasar de 4 a 8 GB de memoria interna, los encuestados están dispuestos a gastar 20.02 USD
+```{r}
+price_rel <- 0-(-1.9210)
+diff_price <- 200-80
+
+.3205/price_rel * diff_price 
+```
+
+Para pasar de 8 a 16 GB de memoria interna, los encuestados están dispuestos a gastar 23.62 USD
+
+```{r}
+(.6986-.3205) /price_rel * diff_price
+```
+
+Para pasar de 16 a 32 GB de memoria interna, los encuestados están dispuestos a gastar 40.16 USD
+
+```{r}
+(1.3419 - .6986)/price_rel * diff_price
+```
+
+
+**5.	Realice una segmentación de sus encuestados basándose en las preferencias obtenidas mediante la regresión. Comente respecto a los segmentos obtenidos. ¿Qué producto/servicio podría ofrecer a cada segmento? (HINT: considere no más de 4 segmentos)**
+ 
+Con motivo de realizar una segmentación,  identificamos grupos a partir de un proceso de k-means clustering.
+
+Antes de correr el algoritmo, escalamos las variables y evaluamos la cvantidad óptima de grupos a partir del silhouette method, obteniendo que resulta óptimo segmentar a los encuestados en 5 grupos.
+
+```{r}
+data_scaled <- partial_values %>% 
+  select(-1) %>% 
+  scale() %>% 
+  data.frame()
+
+fviz_nbclust(data_scaled,nstart = 50, kmeans, method = "silhouette")+
+  labs(subtitle = "Silhouette method")
+
+```
+
+Ahora corremos el algoritmo de kmeans para 5 grupos y seteamos el parámetro nstart en 50 para asegurar la convergencia del algoritmo
+
+```{r}
+kmeans_clustering <- kmeans(data_scaled,centers = 5,nstart = 50)
+```
+
+
+Luego transformamos el dataframe de las valoraciones parciales, aplicando una transformación de componentes principales para generar 2 variables sintéticas que maximicen la varianza en los datos y permitan representar a cada encuestado reproyectándolo en estas nuevas variables.
+
+```{r}
+res.pca <- prcomp(data_scaled, scale = TRUE)
+fviz_eig(res.pca)
+
+```
+
+Como se puede observar, las primeras 2 componentes acumulan el 53.8% de la varianza de los datos y ahora graficamos en un biplot los puntos reproyectados y las direcciones de los atributos originales en las nuevas dimensiones sintéticas.
+
+```{r}
+fviz_pca_biplot(res.pca, label="var", habillage=kmeans_clustering$cluster)+
+  ggforce::geom_mark_ellipse(aes(fill = Groups,
+                                 color = Groups),expand = 1e-2)
+```
+
+De un análisis visual, se puede observar que contemplando los primeros 4 segmentos, al primer segmento se le puede ofrecer un producto que priorice la capacidad de almacenamiento interno y la inclusión de un panel retrolumínico (internal_memory2, 3 y 4 se asocian a aumentos de memoria sobre el nivel base y backlight_2 indica la no inclusión del panel retrolumínico), Al grupo 2 un producto que tenga particular atención en un bajo precio ya que estos son los más sensibles a un aumento en el precio (price_2,3,y 4 se asocian a aumentos en el precio en relación al precio base). Para el grupo 3 un producto equilibrado y con más atención al tamaño de la pantalla que a la memoria interna (size_2 y size_3 se asocian a un aumento del tamaño de la pantalla respecto del nivel base). Por último, el grupo 4 es poco sensible al precio y se les puede ofrecer un producto sin compromisos en lo que respecta a los atributos. 
+
+**6.	Generar dos perfiles de productos que no aparezcan en su cuestionario. Suponga que actualmente éstos son los únicos productos en el mercado ofrecidos por los competidores X e Y. Basándose en el total de sus encuestas, ¿cuál sería su estimación sobre la participación de mercado para cada uno de estos productos?**
+
+
+De todas las combinaciones posibles de productos, escogemos aleatoriamente la producida por X y la producida por Y
+
+```{r}
+mkt_prods <- c %>% 
+  caEncodedDesign()
+  
+dummified_2 <-  dummy_cols(.data = mkt_prods %>% mutate_all(as.factor),
+                           remove_first_dummy = T, remove_selected_columns = T) %>% 
+  sample_n(2)
+
+kbl(dummified_2, booktabs = T,
+    caption = "Producto producido por X y por Y") %>%
+kable_styling(latex_options  = c("striped", "scale_down"))
+```
+
+Observamos que el producto de X se posiciona en el mercado con un precio de 120 USD, un tamaño de 10 pulgadas, con retroiluminación, sin resistencia al agua y una memoria interna de 4GB. Mientras que el producto de Y se posiciona en el mercado a un precio menor, de 80 USD, un tamaño menor, de 8 pulgadas, también posee retroiluminación, no posee resistencia al agua y una memoria interna de 4GB
+
+
+Ahora inicializamos un vector vacío que será populado con la elección de cada encuestado que maximice su utilidad estimada.
+Para ello, generamos un for loop que en cada iteración ajuste un modelo estadístico de regresión múltiple a cada encuestado, y a partir de este modelo evalúe la utilidad generada por el producto de la empresa X y el producto de la empresa Y.
+Por último, se determina aquel que genera mayor utilidad y se asigna como la elección del agente
+
+```{r,message=FALSE}
+product_selected <- c()
+
+for(i in 1:length(scores_dfs)){
+  data <- scores_dfs[[i]]
+  model <- lm(value~.,data)
+  pred <- predict(model, dummified_2)
+  
+  product_selected <- product_selected %>% append(ifelse(pred[1]>pred[2], 'x', 'y'))
+  
+  
+}
+```
+
+```{r}
+product_selected %>% table() %>% prop.table() 
+```
+
+
+En el caso hipotético de que estos fueran los únicos 2 productos ofrecidos en el mercado y que los consumidores realizan sus elecciones maximizando su utilidad, el producto de la empresa X tendrá una participación del 41.03% del mercado mientras que el producto de la empresa Y del 58.97%.
